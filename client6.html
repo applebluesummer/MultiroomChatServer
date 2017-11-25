@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+      <link href='https://fonts.googleapis.com/css?family=Open+Sans:400,300,700' rel='stylesheet' type='text/css'>
+      <style>
+      * {
+         box-sizing: border-box;
+         margin:     0;
+         padding:    0;
+      }
+
+      body {
+         background:  #F5F6CE;
+         font-family: 'Open Sans', sans-serif;
+         font-weight: 400;
+         font-size:   0.9em;
+      }
+
+      h1{
+         color: #F5F6CE; 
+         margin: auto;
+      }
+
+      h2{
+         color: #DF574B;
+      }
+
+      #body{
+         margin-top: 80px;
+      }
+
+      .top-header {
+         align-items:   center;
+         background:    #DF574B;
+         box-shadow:    0px 2px 10px #333333;
+         display:       flex;
+         height:        60px;
+         position:      fixed;
+         top:           0;
+         width:         100%;
+         z-index:       1;
+      }
+
+      #greeting {
+         margin: 10px;
+         font-size: 20px;
+         font-weight: bold;
+      }
+
+      .box {
+         line-height:30px;
+         float:left;
+         padding: 5px;
+         border: 3px solid #DF574B;
+         margin: 5px;
+      }
+
+      </style>
+      <script src="/socket.io/socket.io.js"></script>
+      <script>
+ 
+      var socketio = io.connect();
+      var cur_room;
+      var store_username;
+      var touser_input;
+
+      socketio.on("hello", function (username){
+         document.getElementById("greeting").innerHTML = "hello, " + username + ".   You can create new chat room in the Lobby.";
+      });
+
+      socketio.on("send_chat", function (username, data){
+         $("#chatlog").append("<hr>");
+         $("#chatlog").append("<b>" + username + ": </b>" + data + "<br>");
+      });
+
+      socketio.on('updaterooms', function (rooms, current_room){
+         // before update the room list, empty the current list
+         $('#rooms').empty();
+         // add the current room name as plain text, and other room names as a reference to the room
+         $.each(rooms, function(key, value){
+            if (key == cur_room) {
+               $('#rooms').append('<div>' + key + '</div>');
+            } else {
+               $('#rooms').append('<div><button onclick="checkRoom(\''+key+'\')">' + key + '</button></div>');
+            }
+         });
+      });
+
+      socketio.on('updateusers', function (rooms, current_room){
+         document.getElementById("userlist_title").innerHTML = "User List in Room: " + current_room;
+         $('#users').empty();
+         // extract the user list of current room and display
+         $.each(rooms, function (key, value){
+            if (key == current_room) {
+               if (typeof rooms[key].users[0] != "undefined") {
+                  $.each(rooms[key].users, function (index, cur_user){
+                     if (cur_user == store_username) {
+                        $('#users').append('<div>' + cur_user + '</div>');
+                     } else {
+                        $('#users').append('<div><button onclick="privateMsg(\''+cur_user+'\')">' + cur_user + '</button></div>');
+                     }
+                  });
+                  
+               } else{
+                  $('#users').append('<div>Error: no user</div>');
+               }
+            }
+         });
+      });
+
+      socketio.on('checkPass', function (newroom, password){
+         if (password == "null") {
+            switchRoom(newroom);
+         } else {
+            var pass_input = prompt("You're entering a private room. Please submit the password.");
+            if (pass_input != password) {
+               alert("Wrong Password");
+               return;
+            } else {
+               switchRoom(newroom);
+            }
+         }
+      });
+
+      socketio.on('checkcreator', function (creator){
+         if (store_username == creator) {
+            $("#creatormode").show();
+         }
+      });
+
+      socketio.on('kickOut', function (usertokick){
+         if (usertokick == "null") {
+            alert("the input username is not in your room.");
+         } else {
+            socketio.emit("kick_out",usertokick);
+         }
+      });
+
+      socketio.on("kick_out_client",function (user) {
+         // switch the kicked-out user to Lobby
+         socketio.emit("switchRoom","Lobby");   
+      });
+
+      socketio.on('banUser', function (usertoban){
+         if (usertoban == "null") {
+            alert("the input username is not in your room.");
+         } else {
+            socketio.emit("ban_user",usertoban);
+         }
+      });
+
+      socketio.on('checkbanned', function (newroom, user){
+         if (user == store_username) {
+            alert("you have been banned from the creator of this room");
+         }
+      });
+ 
+      function sendMessage(){
+         var msg = $("#message_input").val();
+         $("#message_input").val("");
+         socketio.emit("send_roomchat", msg);
+      }
+
+      function privateMsg (touser){
+         $("#private_message_box").show();
+         touser_input = touser;
+         $("#private_message_input").attr("placeholder", "To: " + touser_input);
+         $("#private_message_input_btn").bind("click", function() {
+            var pri_msg = $("#private_message_input").val();
+            $("#private_message_input").attr("placeholder", "");
+            $("#private_message_input").val("");
+            $("#private_message_box").hide();
+            socketio.emit("send_prichat", pri_msg, touser_input);
+            $("#private_message_input_btn").unbind();
+         });
+      }
+
+      function createRoom(){
+         var roomname = $("#roomName").val();
+         var password = $("#password").val();
+         $("#roomName").val("");
+         $("#password").val("");
+         $("#select_pass").val("No");
+         $("#room_pass").hide();
+         if (roomname == "") {
+            alert("room name is required.");
+            return;
+         }
+         $("#roomName").val("");
+         socketio.emit("create_room", roomname, password);
+      }
+
+      function checkRoom(room) {
+         socketio.emit('checkRoom', room);
+      }
+
+      function switchRoom(room){
+         if (room != 'Lobby') {
+            $("#createRoom").hide();
+         } else {
+            $("#createRoom").show();
+         }
+         cur_room = room;
+         socketio.emit('switchRoom', room);
+      }
+
+      function kickOutCheck() {
+         var user = $("#kick_out_user").val();
+         $("#kick_out_user").val("");
+         if (user == store_username) {
+            alert("It's strange to kick yourself out. Isn't it?");
+         } else {
+            socketio.emit("kick_out_check",cur_room, user);
+         }
+      }
+
+      function banUserCheck() {
+         var user = $("#ban_use").val();
+         $("#ban_use").val("");
+         if (user == store_username) {
+            alert("It's strange to ban yourself. Isn't it?");
+         } else {
+            socketio.emit("ban_user_check",cur_room, user);
+         }
+      }
+
+      </script>
+   </head>
+   <body>
+      <header class="top-header">
+         <h1>Welcome to the Chat Room</h1>
+      </header>
+      <div id="body">
+         <div id='login'>
+            <h2>Please log in to communicate</h2>
+            <input type="text" id='username_input'>
+            <button id="username_input_btn">Submit your nickname</button>
+         </div>
+         <script>
+            $("#username_input_btn").bind("click", function(){
+               var user = $("#username_input").val();
+               if (user == "") {
+                  alert("nickname is required.");
+                  return;
+               }
+               $("#username_input").val("");
+               socketio.emit('adduser', user);
+               cur_room = 'Lobby';
+               store_username = user;
+               $("#login").hide();
+               $("#roomlist").show();
+               $("#createRoom").show();
+               $("#message_box").show();
+               $("#userlist").show();
+            });
+         </script>
+         
+         <p id="greeting"></p>
+
+         <div class="box" hidden="hidden" id="roomlist">
+            <b>ROOM LIST</b>
+            <div id="rooms"></div>
+         </div>
+
+         <div class="box" hidden="hidden" id="createRoom">
+            Create New Chat Room:<br>
+            Room Name:<input type="text" id="roomName"/> <br>
+            Need password for a private room? <br>
+            <select id="select_pass" name = "select_pass">
+               <option value="Yes">Yes</option>
+               <option selected value="No">No</option>
+            </select> <br>
+            <label id="room_pass" style="display:none">
+               Enter Password:<input type="text" id="password"/> <br>
+            </label>
+            <button id="createRoom_btn">Submit</button>
+         </div>
+         <script>
+            $("#select_pass").bind("change", function(){
+               if ($("#select_pass").val() == "Yes") {
+                  $("#room_pass").show();
+               } else if ($("#select_pass").val() == "No") {
+                  $("#room_pass").hide();
+               }
+            });
+            $("#createRoom_btn").bind("click", createRoom);
+         </script>
+         <div class="box" hidden="hidden" id="message_box">
+            <input type="text" id="message_input">
+            <button id="message_input_btn">send</button>
+            <div id="chatlog"></div>
+         </div>
+         <script>
+            $("#message_input_btn").bind("click", sendMessage);
+         </script>
+         <div class="box" hidden="hidden" id="userlist">
+            <b id="userlist_title"></b>
+            <p> Click on other users' username to send a private message. </p>
+            <div hidden="hidden" id="private_message_box">
+               <input type="text" id="private_message_input">
+               <button id="private_message_input_btn">send privately</button>
+            </div>
+            <div id="users"></div>
+         </div>
+         <div class="box" hidden="hidden" id="creatormode">
+            <p> You can kick/ban user from the current user list as the creator. </p>
+            Kick out temporarily: 
+            <br> <input type="text" id="kick_out_user">
+            <button onclick="kickOutCheck()" id="kick_out_user_btn">Kick out</button> <br>
+            Ban permanently: 
+            <br> <input type="text" id="ban_user">
+            <button onclick="banUserCheck()" id="ban_user_btn">Kick out</button>
+         </div>
+      </div>
+      
+   </body>
+</html>
