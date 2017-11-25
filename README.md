@@ -1,0 +1,2 @@
+# MultiroomChatServer
+• Developed a multi-room chat server enabled multiple clients request data that changes real-time using Node.js. • Utilized Socket.IO implement asynchronous, two-way communication between the server and the client. • Maintained room list and user list in server side, implemented functions to process requests such as create new room, temporary kicked user out or permanent banned user.
